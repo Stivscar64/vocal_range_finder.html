@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Rango Vocal - Encuentra tu Tono Cómodo</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  if (window.tailwind) {
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            darkBg: '#090d16',
+            panelBg: 'rgba(15, 23, 42, 0.65)',
+            accentGold: '#f1c40f',
+            accentRose: '#e94560',
+            accentCyan: '#06b6d4',
+          }
+        }
+      }
+    }
+  } else {
+    console.warn("Tailwind CDN no cargó (sin conexión a internet). La página seguirá funcionando pero sin estilos.");
+  }
+</script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: radial-gradient(circle at top right, #1e1b4b 0%, #090d16 60%, #020617 100%);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .glass-panel {
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+
+  @keyframes pulseRing {
+    0% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.5); }
+    70% { box-shadow: 0 0 0 22px rgba(241, 196, 15, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); }
+  }
+  .mic-listening { animation: pulseRing 1.6s infinite; }
+
+  @keyframes blinkDot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+  }
+  .blink-dot { animation: blinkDot 1s infinite; }
+
+  /* Piano vertical para mostrar rango vocal */
+  .range-keyboard {
+    position: relative;
+    width: 100%;
+    background: #0a0a0f;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: inset 0 0 16px rgba(0,0,0,0.8);
+  }
+  .range-key {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.45);
+    transition: all 0.3s ease;
+  }
+  .range-key.in-range {
+    background: linear-gradient(to right, rgba(241, 196, 15, 0.22), transparent);
+    color: #f1c40f;
+    font-weight: 800;
+  }
+  .range-key.is-min, .range-key.is-max {
+    background: linear-gradient(to right, rgba(241, 196, 15, 0.5), rgba(241,196,15,0.08));
+    color: #fffbeb;
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .needle-indicator {
+    transition: left 0.08s linear, background-color 0.15s ease;
+  }
+</style>
+</head>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD5KIY1nreq9CEYqBYSquWMfQcwQPD43DQ",
+    authDomain: "vocal-range-finder-1ce92.firebaseapp.com",
+    projectId: "vocal-range-finder-1ce92",
+    storageBucket: "vocal-range-finder-1ce92.firebasestorage.app",
+    messagingSenderId: "754170232447",
+    appId: "1:754170232447:web:ee5cb88ceb64588a1d894a"
+  };
+  let db = null;
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  } catch (e) {
+    console.warn("No se pudo inicializar Firebase, se usará almacenamiento solo local.", e);
+  }
+</script>
+<body class="text-slate-100 min-h-screen pb-12">
+
+<div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-3 pointer-events-none"></div>
+
+<div class="max-w-4xl mx-auto px-4 pt-6">
+
+  <!-- Cabecera -->
+  <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <div>
+      <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">
+        🎤 Mi Rango Vocal
+      </h1>
+      <p class="text-xs sm:text-sm text-slate-300 mt-1">Descubre las notas más cómodas para tu voz, sin ensayo y error.</p>
+    </div>
+    <a href="prochords_studio.html" class="text-xs font-bold text-amber-400 hover:text-amber-300 border border-amber-400/30 hover:border-amber-400/60 rounded-xl px-4 py-2.5 transition-all">
+      ← Volver a ProChords Studio
+    </a>
+  </div>
+
+  <!-- Banner de permiso de micrófono / advertencia -->
+  <div id="mic-warning-banner" class="hidden glass-panel border-rose-500/30 rounded-2xl p-4 mb-5 flex items-center gap-3">
+    <span class="text-rose-400 text-lg">⚠</span>
+    <p class="text-sm text-rose-200">No se pudo acceder al micrófono. Revisa los permisos de tu navegador y vuelve a intentarlo.</p>
+  </div>
+
+  <!-- Paso 1: Explicación -->
+  <div class="glass-panel rounded-2xl p-6 mb-5">
+    <div class="border-b border-slate-800 pb-3 mb-4">
+      <h2 class="text-base sm:text-lg font-bold text-amber-400">¿Cómo funciona?</h2>
+      <p class="text-sm text-slate-300 mt-1">En 2 pasos encontramos el rango de notas donde tu voz suena más cómoda y segura, sin forzar.</p>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4">
+        <div class="text-amber-400 font-extrabold text-sm mb-1">1. Nota más grave</div>
+        <p class="text-sm text-slate-300">Vas a cantar o tararear (con "mmm" o "ahh") la nota más grave que puedas sostener sin esforzarte ni forzar la garganta.</p>
+      </div>
+      <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4">
+        <div class="text-amber-400 font-extrabold text-sm mb-1">2. Nota más aguda</div>
+        <p class="text-sm text-slate-300">Luego cantas la nota más aguda que puedas sostener cómodamente, sin gritar ni que se te quiebre la voz.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paso activo: Captura de nota -->
+  <div class="glass-panel rounded-2xl p-6 mb-5">
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <div>
+        <span class="text-xs font-extrabold text-slate-300 uppercase tracking-wider block mb-1" id="capture-step-label">Paso 1 de 2</span>
+        <h2 class="text-base sm:text-lg font-bold text-slate-100" id="capture-instruction">Canta tu nota más grave y cómoda</h2>
+      </div>
+      <div id="capture-status-badge" class="text-xs font-semibold tracking-wider uppercase text-slate-300">
+        Micrófono apagado
+      </div>
+    </div>
+
+    <div class="mb-5">
+      <label class="text-xs uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">¿Quién va a cantar? (opcional, para guardarlo en el equipo)</label>
+      <input id="singer-name-input" type="text" maxlength="30" placeholder="Ej: María, Voz 2..." class="w-full bg-slate-950/60 border border-slate-800 focus:border-amber-400/50 outline-none rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition-all">
+    </div>
+
+    <div class="flex flex-col items-center gap-5 py-4">
+      <!-- Botón de micrófono circular -->
+      <button id="mic-button" onclick="toggleMicCapture()" class="relative w-28 h-28 rounded-full bg-gradient-to-br from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 flex items-center justify-center text-4xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer">
+        🎙️
+      </button>
+      <p class="text-sm text-slate-300" id="mic-helper-text">Pulsa el micrófono y sostén la nota durante 2 segundos.</p>
+
+      <!-- Indicador de nota detectada en vivo -->
+      <div class="w-full max-w-sm bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 text-center">
+        <div class="text-xs uppercase font-extrabold text-slate-300 tracking-widest mb-1">Nota detectada ahora:</div>
+        <div class="text-5xl font-black text-amber-400 tracking-tight" id="live-note-display">--</div>
+        <div class="text-sm text-slate-300 mt-1" id="live-freq-display">-- Hz</div>
+
+        <!-- Barra de afinación -->
+        <div class="relative w-full h-2 bg-slate-900 rounded-full mt-4 overflow-hidden">
+          <div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700"></div>
+          <div id="tuning-needle" class="needle-indicator absolute top-0 bottom-0 w-1.5 rounded-full bg-amber-400" style="left: 50%;"></div>
+        </div>
+        <div class="flex justify-between text-xs text-slate-400 font-bold mt-1">
+          <span>GRAVE</span>
+          <span>AFINADO</span>
+          <span>AGUDO</span>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <button onclick="confirmCapturedNote()" id="confirm-note-btn" disabled class="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-30 disabled:cursor-not-allowed px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer">
+          ✓ Confirmar esta nota
+        </button>
+        <button onclick="resetCapture()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-300 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer">
+          ↺ Reiniciar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resultado: Rango vocal encontrado -->
+  <div id="range-result-panel" class="glass-panel rounded-2xl p-6 mb-5 hidden">
+    <div class="border-b border-slate-800 pb-3 mb-4">
+      <h2 class="text-base sm:text-lg font-bold text-amber-400">🎉 Tu rango vocal cómodo</h2>
+      <p class="text-sm text-slate-300 mt-1" id="range-result-subtitle">Estas son las notas donde tu voz suena mejor.</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-5">
+      <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 text-center">
+        <div class="text-xs uppercase font-extrabold text-slate-300 tracking-wider mb-1">Nota más grave</div>
+        <div class="text-3xl font-black text-amber-400" id="result-min-note">--</div>
+      </div>
+      <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 text-center">
+        <div class="text-xs uppercase font-extrabold text-slate-300 tracking-wider mb-1">Nota más aguda</div>
+        <div class="text-3xl font-black text-amber-400" id="result-max-note">--</div>
+      </div>
+    </div>
+
+    <!-- Teclado visual de rango -->
+    <div class="range-keyboard mb-5" id="range-keyboard-container"></div>
+
+    <!-- Clasificación de voz aproximada -->
+    <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 mb-5">
+      <div class="text-xs uppercase font-extrabold text-slate-300 tracking-wider mb-1">Clasificación aproximada de tu voz:</div>
+      <div class="text-lg font-extrabold text-emerald-400" id="voice-classification">--</div>
+      <p class="text-sm text-slate-300 mt-1" id="voice-classification-detail"></p>
+    </div>
+
+    <!-- Recomendación de transposición -->
+    <div class="bg-amber-400/10 border border-amber-400/30 rounded-xl p-4">
+      <div class="text-xs uppercase font-extrabold text-amber-400 tracking-wider mb-2">Recomendación para cantar en ProChords Studio:</div>
+      <p class="text-sm text-slate-200 leading-relaxed" id="transposition-recommendation">
+        Carga tu canción y usa el control de "Tono Global (semitonos)" para ajustarla a tu rango.
+      </p>
+    </div>
+
+    <div class="flex justify-center mt-5">
+      <button onclick="resetWholeFlow()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-300 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer">
+        ↺ Volver a medir mi rango
+      </button>
+    </div>
+  </div>
+
+  <!-- Equipo de alabanza: rangos guardados y tonalidad común -->
+  <div id="team-panel" class="glass-panel rounded-2xl p-6 mb-5 hidden">
+    <div class="border-b border-slate-800 pb-3 mb-4 flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h2 class="text-base sm:text-lg font-bold text-cyan-400">👥 Rangos del equipo</h2>
+        <p class="text-sm text-slate-300 mt-1">Cada voz guardada aquí se compara para sugerir una tonalidad que le sirva a todo el grupo.</p>
+      </div>
+      <button onclick="clearTeam()" class="text-xs font-bold text-slate-300 hover:text-rose-400 border border-slate-800 hover:border-rose-500/40 rounded-lg px-3 py-1.5 transition-all">
+        Borrar equipo
+      </button>
+    </div>
+
+    <div id="team-members-list" class="flex flex-col gap-2 mb-5"></div>
+
+    <div id="team-overlap-box" class="bg-cyan-400/10 border border-cyan-400/30 rounded-xl p-4 hidden">
+      <div class="text-xs uppercase font-extrabold text-cyan-400 tracking-wider mb-2">Rango cómodo en común para todo el equipo:</div>
+      <p class="text-sm text-slate-200 leading-relaxed" id="team-overlap-text"></p>
+    </div>
+
+    <div id="team-no-overlap-box" class="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 hidden">
+      <p class="text-sm text-rose-200 leading-relaxed" id="team-no-overlap-text"></p>
+    </div>
+  </div>
+
+  <!-- Piano de referencia para afinar -->
+  <div class="glass-panel rounded-2xl p-6 mb-5">
+    <div class="border-b border-slate-800 pb-3 mb-4 flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h2 class="text-base sm:text-lg font-bold text-amber-400">🎹 Piano de referencia</h2>
+        <p class="text-sm text-slate-300 mt-1">Toca y sostén una tecla para escuchar la nota y afinar tu voz contra ella.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="shiftRefOctave(-1)" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 w-9 h-9 rounded-lg text-base font-bold transition-all cursor-pointer">−</button>
+        <span class="text-xs font-bold text-slate-300 w-24 text-center" id="ref-octave-label">Octava 3-4</span>
+        <button onclick="shiftRefOctave(1)" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 w-9 h-9 rounded-lg text-base font-bold transition-all cursor-pointer">+</button>
+      </div>
+    </div>
+
+    <div id="ref-piano-keys" class="relative w-full select-none" style="height: 150px;"></div>
+
+    <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
+      <span class="text-sm text-slate-300" id="ref-piano-now-playing">Toca una tecla para empezar</span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-300">Sonido:</span>
+        <select id="ref-waveform" class="bg-slate-950/60 border border-slate-800 rounded-lg text-xs text-slate-200 px-2 py-1.5 outline-none">
+          <option value="sine">Suave</option>
+          <option value="triangle" selected>Cálido</option>
+          <option value="sawtooth">Brillante</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modo ensayo en vivo: afinador continuo -->
+  <div class="glass-panel rounded-2xl p-6 mb-5" id="live-rehearsal-panel">
+    <div class="border-b border-slate-800 pb-3 mb-4 flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h2 class="text-base sm:text-lg font-bold text-sky-400">🎤 Modo ensayo en vivo</h2>
+        <p class="text-sm text-slate-300 mt-1">Afinador continuo: déjalo abierto mientras cantan la canción completa.</p>
+      </div>
+      <div id="live-rehearsal-status" class="text-xs font-semibold tracking-wider uppercase text-slate-300">Apagado</div>
+    </div>
+
+    <div class="mb-4">
+      <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Nota objetivo (opcional)</label>
+      <select id="live-target-note" class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none">
+        <option value="">Solo mostrar lo que canto (sin objetivo fijo)</option>
+      </select>
+    </div>
+
+    <div id="live-rehearsal-display" class="rounded-2xl border-2 border-slate-800 transition-colors duration-200 p-6 text-center mb-4">
+      <div class="text-6xl font-black tracking-tight mb-1" id="live-rehearsal-note">--</div>
+      <div class="text-sm text-slate-300 mb-4" id="live-rehearsal-freq">-- Hz</div>
+      <div class="relative w-full h-3 bg-slate-900 rounded-full overflow-hidden">
+        <div class="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700"></div>
+        <div id="live-rehearsal-needle" class="needle-indicator absolute top-0 bottom-0 w-2 rounded-full bg-slate-500" style="left: 50%;"></div>
+      </div>
+      <div class="flex justify-between text-[10px] text-slate-300 font-bold mt-1">
+        <span>♭ Bajo</span>
+        <span id="live-rehearsal-cents">0¢</span>
+        <span>Alto ♯</span>
+      </div>
+    </div>
+
+    <button onclick="toggleLiveRehearsal()" id="live-rehearsal-btn" class="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold px-5 py-3.5 rounded-xl text-sm transition-all cursor-pointer">
+      🎙️ Iniciar afinador en vivo
+    </button>
+  </div>
+
+  <!-- Repertorio: canciones con su tonalidad ideal -->
+  <div class="glass-panel rounded-2xl p-6 mb-5" id="repertoire-panel">
+    <div class="border-b border-slate-800 pb-3 mb-4">
+      <h2 class="text-base sm:text-lg font-bold text-violet-400">📖 Repertorio</h2>
+      <p class="text-sm text-slate-300 mt-1">Guarda cada canción con su tonalidad original y la ideal para quien la canta, para no repetir el trabajo cada ensayo.</p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+      <div class="sm:col-span-2">
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Nombre de la canción</label>
+        <input id="song-name-input" type="text" maxlength="60" placeholder="Ej: Agnus Dei" class="w-full bg-slate-950/60 border border-slate-800 focus:border-violet-400/50 outline-none rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition-all">
+      </div>
+      <div>
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Tonalidad original</label>
+        <select id="song-from-key" class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none"></select>
+      </div>
+      <div>
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Tonalidad ideal para cantarla</label>
+        <select id="song-to-key" class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none"></select>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">¿Para quién es esta tonalidad? (opcional)</label>
+        <input id="song-singer-input" type="text" maxlength="40" placeholder="Ej: María, todo el equipo..." class="w-full bg-slate-950/60 border border-slate-800 focus:border-violet-400/50 outline-none rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 transition-all">
+      </div>
+      <div class="sm:col-span-2">
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Letra y acordes (opcional, para reutilizar en el transponer)</label>
+        <textarea id="song-chords-input" rows="3" placeholder="Pega aquí los acordes y la letra si quieres guardarlos junto con la canción" class="w-full bg-slate-950/60 border border-slate-800 focus:border-violet-400/50 outline-none rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 font-mono transition-all"></textarea>
+      </div>
+    </div>
+
+    <button onclick="saveSongToRepertoire()" class="bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer mb-5">
+      + Guardar canción
+    </button>
+
+    <div class="mb-3">
+      <input id="repertoire-search-input" type="text" oninput="renderRepertoireList()" placeholder="🔍 Buscar canción, cantante o algo dentro de los acordes..." class="w-full bg-slate-950/60 border border-slate-800 focus:border-violet-400/50 outline-none rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 transition-all">
+    </div>
+
+    <div id="repertoire-list" class="flex flex-col gap-2"></div>
+    <p id="repertoire-empty-msg" class="text-sm text-slate-300 text-center py-3">Todavía no has guardado canciones.</p>
+  </div>
+
+  <!-- Transponer acordes -->
+  <div class="glass-panel rounded-2xl p-6 mb-5">
+    <div class="border-b border-slate-800 pb-3 mb-4">
+      <h2 class="text-base sm:text-lg font-bold text-rose-400">🎸 Transponer acordes</h2>
+      <p class="text-sm text-slate-300 mt-1">Pega la letra con acordes de la canción y cámbiala de tonalidad sin perder el formato.</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Tonalidad original</label>
+        <select id="chord-from-key" class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none"></select>
+      </div>
+      <div>
+        <label class="text-[10px] uppercase font-extrabold text-slate-300 tracking-wider block mb-1.5">Tonalidad nueva</label>
+        <select id="chord-to-key" class="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none"></select>
+      </div>
+    </div>
+
+    <textarea id="chord-input" rows="6" placeholder="Ej:
+C            G            Am          F
+Santo, Santo, Santo es el Señor" class="w-full bg-slate-950/60 border border-slate-800 focus:border-rose-400/50 outline-none rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 font-mono leading-relaxed transition-all mb-3"></textarea>
+
+    <div class="flex gap-2 mb-4 flex-wrap">
+      <button onclick="transposeChordText()" class="bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer">Transponer</button>
+      <button onclick="copyTransposedResult()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 font-bold px-5 py-2.5 rounded-xl text-sm transition-all cursor-pointer">Copiar resultado</button>
+    </div>
+
+    <div id="chord-output-box" class="hidden">
+      <label class="text-[10px] uppercase font-extrabold text-rose-400 tracking-wider block mb-1.5">Resultado:</label>
+      <pre id="chord-output" class="w-full bg-slate-950/60 border border-rose-500/30 rounded-xl px-4 py-3 text-sm text-rose-100 font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+    </div>
+  </div>
+
+  <!-- Calentamiento vocal con temporizador -->
+  <div class="glass-panel rounded-2xl p-6 mb-5">
+    <div class="border-b border-slate-800 pb-3 mb-4">
+      <h2 class="text-base sm:text-lg font-bold text-emerald-400">🔥 Calentamiento vocal</h2>
+      <p class="text-sm text-slate-300 mt-1">Una rutina corta antes de cantar, con temporizador para cada ejercicio.</p>
+    </div>
+
+    <div id="warmup-list" class="flex flex-col gap-2 mb-4"></div>
+
+    <div id="warmup-active-box" class="hidden bg-emerald-400/10 border border-emerald-400/30 rounded-xl p-5 text-center">
+      <div class="text-[10px] uppercase font-extrabold text-emerald-400 tracking-wider mb-1" id="warmup-active-name"></div>
+      <div class="text-4xl font-black text-slate-100 mb-3" id="warmup-active-timer">00:00</div>
+      <div class="flex justify-center gap-2">
+        <button onclick="pauseWarmup()" id="warmup-pause-btn" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer">Pausar</button>
+        <button onclick="skipWarmup()" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer">Siguiente ➜</button>
+        <button onclick="stopWarmupRoutine()" class="bg-rose-500/20 border border-rose-500/40 hover:bg-rose-500/30 text-rose-300 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer">Detener</button>
+      </div>
+    </div>
+
+    <button onclick="startWarmupRoutine()" id="warmup-start-btn" class="w-full mt-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-3 rounded-xl text-sm transition-all cursor-pointer">▶ Iniciar rutina completa (≈6 min)</button>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+<script>
+// --- CONSTANTES MUSICALES ---
+const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const NOTE_NAMES_ES = {
+  "C":"Do","C#":"Do#","D":"Re","D#":"Re#","E":"Mi","F":"Fa",
+  "F#":"Fa#","G":"Sol","G#":"Sol#","A":"La","A#":"La#","B":"Si"
+};
+
+// --- ESTADO GLOBAL ---
+let audioContext = null;
+let analyserNode = null;
+let micStream = null;
+let micSourceNode = null;
+let pitchDetectionRAF = null;
+let isListening = false;
+
+let currentStep = 1; // 1 = nota grave, 2 = nota aguda
+let capturedMinMidi = null;
+let capturedMaxMidi = null;
+let liveDetectedMidi = null;
+
+// Buffer de estabilidad: exige sostener la nota un momento antes de habilitar "Confirmar"
+let stableNoteBuffer = [];
+const STABLE_BUFFER_SIZE = 20; // ~0.3-0.5s dependiendo del refresco
+
+// --- NOTIFICACIONES (TOAST) ---
+function showToast(message, type = "success") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const colors = {
+    success: "border-emerald-500/40 text-emerald-300",
+    error: "border-red-500/40 text-red-300",
+    info: "border-sky-500/40 text-sky-300"
+  };
+  const icons = { success: "✓", error: "✕", info: "ℹ" };
+
+  const toast = document.createElement("div");
+  toast.className = `pointer-events-auto bg-slate-900/95 backdrop-blur border ${colors[type] || colors.success} px-4 py-3 rounded-xl shadow-lg text-xs font-semibold flex items-center gap-2 transition-all duration-300 opacity-0 translate-x-4`;
+  toast.innerHTML = `<span>${icons[type] || icons.success}</span><span>${message}</span>`;
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.remove("opacity-0", "translate-x-4"));
+  setTimeout(() => {
+    toast.classList.add("opacity-0", "translate-x-4");
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// --- CONVERSIÓN FRECUENCIA <-> NOTA MIDI ---
+function freqToMidi(freq) {
+  return 69 + 12 * Math.log2(freq / 440);
+}
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function midiToNoteName(midi) {
+  const rounded = Math.round(midi);
+  const noteIdx = ((rounded % 12) + 12) % 12;
+  const octave = Math.floor(rounded / 12) - 1;
+  return { name: NOTE_NAMES[noteIdx], nameEs: NOTE_NAMES_ES[NOTE_NAMES[noteIdx]], octave, midi: rounded };
+}
+
+function formatNoteLabel(midi) {
+  const n = midiToNoteName(midi);
+  return `${n.nameEs}${n.octave}`;
+}
+
+// --- DETECCIÓN DE PITCH: AUTOCORRELACIÓN (algoritmo McLeod simplificado) ---
+function autoCorrelate(buffer, sampleRate) {
+  const SIZE = buffer.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) {
+    rms += buffer[i] * buffer[i];
+  }
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return -1; // silencio, no hay señal suficiente
+
+  let r1 = 0, r2 = SIZE - 1;
+  const threshold = 0.2;
+  for (let i = 0; i < SIZE / 2; i++) {
+    if (Math.abs(buffer[i]) < threshold) { r1 = i; break; }
+  }
+  for (let i = 1; i < SIZE / 2; i++) {
+    if (Math.abs(buffer[SIZE - i]) < threshold) { r2 = SIZE - i; break; }
+  }
+
+  const trimmedBuffer = buffer.slice(r1, r2);
+  const newSize = trimmedBuffer.length;
+
+  const c = new Array(newSize).fill(0);
+  for (let lag = 0; lag < newSize; lag++) {
+    for (let i = 0; i < newSize - lag; i++) {
+      c[lag] += trimmedBuffer[i] * trimmedBuffer[i + lag];
+    }
+  }
+
+  let d = 0;
+  while (d < newSize - 1 && c[d] > c[d + 1]) d++;
+
+  let maxVal = -1, maxPos = -1;
+  for (let i = d; i < newSize; i++) {
+    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+  }
+
+  let T0 = maxPos;
+  if (T0 <= 0) return -1;
+
+  // Interpolación parabólica para mayor precisión
+  if (T0 > 0 && T0 < newSize - 1) {
+    const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+    const a = (x1 + x3 - 2 * x2) / 2;
+    const b = (x3 - x1) / 2;
+    if (a !== 0) T0 = T0 - b / (2 * a);
+  }
+
+  const freq = sampleRate / T0;
+  if (freq < 60 || freq > 1200) return -1; // fuera de rango vocal humano razonable
+  return freq;
+}
+
+// --- CAPTURA DE MICRÓFONO ---
+async function toggleMicCapture() {
+  if (isListening) {
+    stopMicCapture();
+    return;
+  }
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    document.getElementById("mic-warning-banner").classList.remove("hidden");
+    showToast("No se pudo acceder al micrófono", "error");
+    return;
+  }
+
+  document.getElementById("mic-warning-banner").classList.add("hidden");
+
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  micSourceNode = audioContext.createMediaStreamSource(micStream);
+  analyserNode = audioContext.createAnalyser();
+  analyserNode.fftSize = 2048;
+  micSourceNode.connect(analyserNode);
+
+  isListening = true;
+  stableNoteBuffer = [];
+  document.getElementById("mic-button").classList.add("mic-listening", "from-rose-500", "to-rose-400");
+  document.getElementById("mic-button").classList.remove("from-amber-500", "to-amber-400");
+  document.getElementById("capture-status-badge").textContent = "Escuchando...";
+  document.getElementById("capture-status-badge").className = "text-xs font-semibold tracking-wider uppercase text-emerald-400 blink-dot";
+  document.getElementById("mic-helper-text").textContent = "Sostén la nota de forma constante...";
+
+  runPitchDetectionLoop();
+}
+
+function stopMicCapture() {
+  isListening = false;
+  if (pitchDetectionRAF) cancelAnimationFrame(pitchDetectionRAF);
+
+  if (micStream) {
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+  }
+  if (micSourceNode) {
+    micSourceNode.disconnect();
+    micSourceNode = null;
+  }
+
+  document.getElementById("mic-button").classList.remove("mic-listening", "from-rose-500", "to-rose-400");
+  document.getElementById("mic-button").classList.add("from-amber-500", "to-amber-400");
+  document.getElementById("capture-status-badge").textContent = "Micrófono apagado";
+  document.getElementById("capture-status-badge").className = "text-xs font-semibold tracking-wider uppercase text-slate-300";
+  document.getElementById("mic-helper-text").textContent = "Pulsa el micrófono y sostén la nota durante 2 segundos.";
+}
+
+function runPitchDetectionLoop() {
+  if (!isListening || !analyserNode) return;
+
+  const buffer = new Float32Array(analyserNode.fftSize);
+  analyserNode.getFloatTimeDomainData(buffer);
+
+  const freq = autoCorrelate(buffer, audioContext.sampleRate);
+
+  if (freq !== -1) {
+    const midi = freqToMidi(freq);
+    liveDetectedMidi = midi;
+    updateLiveNoteDisplay(midi, freq);
+    pushStableBuffer(midi);
+  } else {
+    document.getElementById("live-note-display").textContent = "--";
+    document.getElementById("live-freq-display").textContent = "-- Hz";
+    stableNoteBuffer = [];
+    document.getElementById("confirm-note-btn").disabled = true;
+  }
+
+  pitchDetectionRAF = requestAnimationFrame(runPitchDetectionLoop);
+}
+
+function pushStableBuffer(midi) {
+  stableNoteBuffer.push(midi);
+  if (stableNoteBuffer.length > STABLE_BUFFER_SIZE) stableNoteBuffer.shift();
+
+  if (stableNoteBuffer.length >= STABLE_BUFFER_SIZE) {
+    const avg = stableNoteBuffer.reduce((a, b) => a + b, 0) / stableNoteBuffer.length;
+    const variance = stableNoteBuffer.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / stableNoteBuffer.length;
+    const isStable = variance < 0.35; // tolerancia de estabilidad en semitonos^2
+
+    document.getElementById("confirm-note-btn").disabled = !isStable;
+  }
+}
+
+function updateLiveNoteDisplay(midi, freq) {
+  const note = midiToNoteName(midi);
+  document.getElementById("live-note-display").textContent = `${note.nameEs}${note.octave}`;
+  document.getElementById("live-freq-display").textContent = `${freq.toFixed(1)} Hz`;
+
+  // Barra de afinación: qué tan cerca está del centro exacto de la nota más próxima
+  const cents = (midi - Math.round(midi)) * 100; // -50 a +50 cents aprox
+  const pct = 50 + (cents / 50) * 40; // mapear a 10%-90% del ancho
+  const needle = document.getElementById("tuning-needle");
+  needle.style.left = `${Math.min(Math.max(pct, 5), 95)}%`;
+
+  if (Math.abs(cents) < 12) {
+    needle.className = "needle-indicator absolute top-0 bottom-0 w-1.5 rounded-full bg-emerald-400";
+  } else {
+    needle.className = "needle-indicator absolute top-0 bottom-0 w-1.5 rounded-full bg-amber-400";
+  }
+}
+
+// --- CONFIRMAR NOTA CAPTURADA ---
+function confirmCapturedNote() {
+  if (liveDetectedMidi === null) return;
+  const avg = stableNoteBuffer.reduce((a, b) => a + b, 0) / stableNoteBuffer.length;
+  const finalMidi = Math.round(avg);
+
+  if (currentStep === 1) {
+    capturedMinMidi = finalMidi;
+    showToast(`Nota grave registrada: ${formatNoteLabel(finalMidi)}`);
+    advanceToStep2();
+  } else if (currentStep === 2) {
+    capturedMaxMidi = finalMidi;
+    showToast(`Nota aguda registrada: ${formatNoteLabel(finalMidi)}`);
+    finishCaptureFlow();
+  }
+}
+
+function advanceToStep2() {
+  currentStep = 2;
+  stopMicCapture();
+  stableNoteBuffer = [];
+  document.getElementById("confirm-note-btn").disabled = true;
+  document.getElementById("capture-step-label").textContent = "Paso 2 de 2";
+  document.getElementById("capture-instruction").textContent = "Ahora canta tu nota más aguda y cómoda";
+  document.getElementById("live-note-display").textContent = "--";
+  document.getElementById("live-freq-display").textContent = "-- Hz";
+}
+
+function resetCapture() {
+  stableNoteBuffer = [];
+  liveDetectedMidi = null;
+  document.getElementById("confirm-note-btn").disabled = true;
+  document.getElementById("live-note-display").textContent = "--";
+  document.getElementById("live-freq-display").textContent = "-- Hz";
+  showToast("Intenta de nuevo, sostén la nota con calma", "info");
+}
+
+function resetWholeFlow() {
+  currentStep = 1;
+  capturedMinMidi = null;
+  capturedMaxMidi = null;
+  liveDetectedMidi = null;
+  stableNoteBuffer = [];
+  stopMicCapture();
+
+  document.getElementById("range-result-panel").classList.add("hidden");
+  document.getElementById("capture-step-label").textContent = "Paso 1 de 2";
+  document.getElementById("capture-instruction").textContent = "Canta tu nota más grave y cómoda";
+  document.getElementById("confirm-note-btn").disabled = true;
+  document.getElementById("live-note-display").textContent = "--";
+  document.getElementById("live-freq-display").textContent = "-- Hz";
+}
+
+// --- FINALIZAR Y MOSTRAR RESULTADOS ---
+function finishCaptureFlow() {
+  stopMicCapture();
+
+  let minMidi = capturedMinMidi;
+  let maxMidi = capturedMaxMidi;
+  if (minMidi > maxMidi) {
+    [minMidi, maxMidi] = [maxMidi, minMidi];
+    showToast("Ajustamos el orden: la nota grave y aguda se detectaron al revés", "info");
+  }
+
+  document.getElementById("result-min-note").textContent = formatNoteLabel(minMidi);
+  document.getElementById("result-max-note").textContent = formatNoteLabel(maxMidi);
+
+  renderRangeKeyboard(minMidi, maxMidi);
+  renderVoiceClassification(minMidi, maxMidi);
+  renderTranspositionRecommendation(minMidi, maxMidi);
+  saveCurrentMemberToTeam(minMidi, maxMidi);
+
+  document.getElementById("range-result-panel").classList.remove("hidden");
+  document.getElementById("range-result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderRangeKeyboard(minMidi, maxMidi) {
+  const container = document.getElementById("range-keyboard-container");
+  container.innerHTML = "";
+
+  const padding = 4; // semitonos de contexto a cada lado
+  const displayMin = minMidi - padding;
+  const displayMax = maxMidi + padding;
+  const totalKeys = displayMax - displayMin + 1;
+  const keyHeight = 24; // px fijo, legible; el contenedor crece según el rango
+  container.style.height = `${totalKeys * keyHeight}px`;
+
+  for (let i = 0; i < totalKeys; i++) {
+    const midi = displayMax - i; // de agudo (arriba) a grave (abajo)
+    const note = midiToNoteName(midi);
+    const key = document.createElement("div");
+    key.className = "range-key";
+    key.style.top = `${i * keyHeight}px`;
+    key.style.height = `${keyHeight}px`;
+
+    if (midi === minMidi || midi === maxMidi) {
+      key.classList.add(midi === minMidi ? "is-min" : "is-max");
+      key.textContent = `${note.nameEs}${note.octave} ${midi === minMidi ? "← más grave" : "← más aguda"}`;
+    } else if (midi > minMidi && midi < maxMidi) {
+      key.classList.add("in-range");
+      key.textContent = `${note.nameEs}${note.octave}`;
+    } else {
+      key.textContent = `${note.nameEs}${note.octave}`;
+    }
+
+    container.appendChild(key);
+  }
+}
+
+function renderVoiceClassification(minMidi, maxMidi) {
+  // Clasificación aproximada y educativa, no profesional/clínica
+  const classifications = [
+    { name: "Contralto / Bajo Profundo", min: 36, max: 57, detail: "Rango grave, cómodo en tonalidades bajas como C, D o Eb." },
+    { name: "Tenor / Alto", min: 45, max: 64, detail: "Rango medio, versátil para la mayoría de canciones de alabanza moderna." },
+    { name: "Soprano / Voz Aguda", min: 55, max: 76, detail: "Rango agudo, cómodo en tonalidades más altas como F, G o A." }
+  ];
+
+  const center = (minMidi + maxMidi) / 2;
+  let best = classifications[1];
+  let bestDist = Infinity;
+  classifications.forEach(c => {
+    const cCenter = (c.min + c.max) / 2;
+    const dist = Math.abs(center - cCenter);
+    if (dist < bestDist) { bestDist = dist; best = c; }
+  });
+
+  document.getElementById("voice-classification").textContent = best.name;
+  document.getElementById("voice-classification-detail").textContent = best.detail + " (Esta es una guía orientativa, no una clasificación vocal profesional.)";
+}
+
+function renderTranspositionRecommendation(minMidi, maxMidi) {
+  // Suponemos que la melodía de referencia de una canción típica de alabanza
+  // se mueve cómodamente en un rango de aprox. una octava y media, centrada en C4 (MIDI 60).
+  const songRefCenter = 60; // C4, referencia neutral común
+  const userCenter = (minMidi + maxMidi) / 2;
+  const semitonesSuggested = Math.round(userCenter - songRefCenter);
+
+  const el = document.getElementById("transposition-recommendation");
+  if (semitonesSuggested === 0) {
+    el.textContent = "Tu rango está cerca del tono original de muchas canciones de referencia. Prueba primero sin transponer, y ajusta ±1 ó 2 semitonos si lo sientes incómodo.";
+  } else if (semitonesSuggested > 0) {
+    el.textContent = `Tu voz tiende a sonar más cómoda en tonos más agudos. Como punto de partida, prueba subiendo la canción +${semitonesSuggested} semitonos en el control de "Tono Global" de ProChords Studio, y ajusta desde ahí según lo que sientas más natural.`;
+  } else {
+    el.textContent = `Tu voz tiende a sonar más cómoda en tonos más graves. Como punto de partida, prueba bajando la canción ${semitonesSuggested} semitonos en el control de "Tono Global" de ProChords Studio, y ajusta desde ahí según lo que sientas más natural.`;
+  }
+}
+
+// --- EQUIPO DE ALABANZA (sincronizado en la nube con Firestore) ---
+let teamCache = [];
+
+function slugify(str) {
+  return (str || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || `item-${Date.now()}`;
+}
+
+function startTeamSync() {
+  if (!db) return;
+  db.collection("team_members").onSnapshot(
+    (snapshot) => {
+      teamCache = snapshot.docs.map(d => d.data());
+      renderTeamPanel();
+    },
+    (err) => {
+      console.warn("Error de sincronización del equipo:", err);
+      showToast("No se pudo conectar con la base de datos del equipo", "error");
+    }
+  );
+}
+
+async function saveCurrentMemberToTeam(minMidi, maxMidi) {
+  const nameInput = document.getElementById("singer-name-input");
+  const rawName = (nameInput.value || "").trim();
+  const name = rawName || `Voz ${teamCache.length + 1}`;
+  const entry = { name, min: minMidi, max: maxMidi, date: new Date().toISOString() };
+
+  if (!db) {
+    showToast("Sin conexión a la base de datos, no se pudo guardar", "error");
+    return;
+  }
+  try {
+    await db.collection("team_members").doc(slugify(name)).set(entry);
+    showToast(`${name} se guardó en el equipo (sincronizado)`);
+  } catch (e) {
+    showToast("Error al guardar en la nube", "error");
+  }
+  nameInput.value = "";
+}
+
+async function deleteTeamMember(name) {
+  if (!db) return;
+  try {
+    await db.collection("team_members").doc(slugify(name)).delete();
+  } catch (e) {
+    showToast("No se pudo eliminar", "error");
+  }
+}
+
+async function clearTeam() {
+  if (!db) return;
+  const snapshot = await db.collection("team_members").get();
+  const batch = db.batch();
+  snapshot.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+}
+
+function renderTeamPanel() {
+  const team = teamCache;
+  const panel = document.getElementById("team-panel");
+  const list = document.getElementById("team-members-list");
+  const overlapBox = document.getElementById("team-overlap-box");
+  const noOverlapBox = document.getElementById("team-no-overlap-box");
+
+  if (team.length === 0) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+
+  const globalMin = Math.min(...team.map(m => m.min), ...team.map(m => m.max));
+  const globalMax = Math.max(...team.map(m => m.min), ...team.map(m => m.max));
+  const span = Math.max(globalMax - globalMin, 1);
+
+  list.innerHTML = team.map(m => {
+    const lo = Math.min(m.min, m.max), hi = Math.max(m.min, m.max);
+    const leftPct = ((lo - globalMin) / span) * 100;
+    const widthPct = ((hi - lo) / span) * 100;
+    return `
+      <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-3">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-xs font-bold text-slate-200">${escapeHtml(m.name)}</span>
+          <div class="flex items-center gap-2">
+            <span class="text-sm text-slate-300 font-semibold">${formatNoteLabel(lo)} – ${formatNoteLabel(hi)}</span>
+            <button onclick="deleteTeamMember('${escapeHtml(m.name).replace(/'/g, "\\'")}')" class="text-slate-400 hover:text-rose-400 text-xs transition-all cursor-pointer" title="Eliminar">✕</button>
+          </div>
+        </div>
+        <div class="relative w-full h-2.5 bg-slate-900 rounded-full overflow-hidden">
+          <div class="absolute top-0 bottom-0 rounded-full bg-cyan-400/70" style="left:${leftPct}%; width:${Math.max(widthPct, 3)}%;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  // Calcular intersección (rango cómodo en común) de todas las voces guardadas
+  const lowBounds = team.map(m => Math.min(m.min, m.max));
+  const highBounds = team.map(m => Math.max(m.min, m.max));
+  const commonMin = Math.max(...lowBounds);
+  const commonMax = Math.min(...highBounds);
+
+  if (team.length < 2) {
+    overlapBox.classList.add("hidden");
+    noOverlapBox.classList.add("hidden");
+  } else if (commonMax - commonMin >= 2) {
+    overlapBox.classList.remove("hidden");
+    noOverlapBox.classList.add("hidden");
+    const center = (commonMin + commonMax) / 2;
+    const semitones = Math.round(center - 60);
+    let suggestion;
+    if (semitones === 0) {
+      suggestion = "cerca del tono original (Tono Global ≈ 0)";
+    } else if (semitones > 0) {
+      suggestion = `subiendo +${semitones} semitonos el "Tono Global" en ProChords Studio`;
+    } else {
+      suggestion = `bajando ${semitones} semitonos el "Tono Global" en ProChords Studio`;
+    }
+    document.getElementById("team-overlap-text").textContent =
+      `Entre ${formatNoteLabel(commonMin)} y ${formatNoteLabel(commonMax)} todas las voces guardadas (${team.length}) pueden cantar cómodamente sin forzar. Como punto de partida, prueba ${suggestion}, y ajusta según cómo se sienta la melodía principal.`;
+  } else {
+    overlapBox.classList.add("hidden");
+    noOverlapBox.classList.remove("hidden");
+    document.getElementById("team-no-overlap-text").textContent =
+      `Los rangos guardados (${team.length} voces) casi no se superponen. Puede que convenga dividir la canción en partes (algunos cantan la estrofa, otros el coro) o usar armonías a distinta octava en vez de una sola tonalidad para todos.`;
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// --- PIANO DE REFERENCIA (afinador) ---
+let refSynth = null;
+let refOctaveOffset = 0; // 0 = octavas 3-4 alrededor de C4
+let refActiveMidi = null;
+
+function getRefSynth() {
+  if (!refSynth) {
+    refSynth = new Tone.Synth({
+      oscillator: { type: document.getElementById("ref-waveform").value },
+      envelope: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.3 }
+    }).toDestination();
+  }
+  return refSynth;
+}
+
+function shiftRefOctave(dir) {
+  refOctaveOffset = Math.max(-2, Math.min(2, refOctaveOffset + dir));
+  const baseLabel = 3 + refOctaveOffset;
+  document.getElementById("ref-octave-label").textContent = `Octava ${baseLabel}-${baseLabel + 1}`;
+  renderRefPiano();
+}
+
+function renderRefPiano() {
+  const container = document.getElementById("ref-piano-keys");
+  container.innerHTML = "";
+  // C3 = midi 48. Ajustamos según refOctaveOffset, mostramos 2 octavas (24 semitonos)
+  const startMidi = 48 + refOctaveOffset * 12;
+  const totalSemitones = 24;
+
+  const blackKeyOffsets = [1, 3, 6, 8, 10]; // posiciones dentro de la octava que son negras
+  const whiteMidis = [];
+  for (let i = 0; i <= totalSemitones; i++) {
+    const midi = startMidi + i;
+    if (!blackKeyOffsets.includes(midi % 12)) whiteMidis.push(midi);
+  }
+  const whiteWidth = 100 / whiteMidis.length;
+
+  whiteMidis.forEach((midi, idx) => {
+    const key = document.createElement("div");
+    key.className = "absolute top-0 bottom-0 bg-slate-100 hover:bg-amber-100 active:bg-amber-300 border border-slate-400 rounded-b-md flex items-end justify-center pb-1.5 text-[10px] font-bold text-slate-500 transition-colors cursor-pointer";
+    key.style.left = `${idx * whiteWidth}%`;
+    key.style.width = `${whiteWidth}%`;
+    key.style.zIndex = "1";
+    key.dataset.midi = midi;
+    key.textContent = midi % 12 === 0 ? formatNoteLabel(midi) : "";
+    attachRefKeyEvents(key, midi);
+    container.appendChild(key);
+  });
+
+  for (let i = 0; i <= totalSemitones; i++) {
+    const midi = startMidi + i;
+    if (!blackKeyOffsets.includes(midi % 12)) continue;
+    // posición: a la derecha de la tecla blanca anterior
+    const whiteIdxBefore = whiteMidis.filter(m => m < midi).length - 1;
+    const key = document.createElement("div");
+    key.className = "absolute top-0 bg-slate-900 hover:bg-amber-700 active:bg-amber-500 rounded-b-md transition-colors cursor-pointer";
+    key.style.left = `calc(${(whiteIdxBefore + 1) * whiteWidth}% - ${whiteWidth * 0.28}%)`;
+    key.style.width = `${whiteWidth * 0.56}%`;
+    key.style.height = "62%";
+    key.style.zIndex = "2";
+    key.dataset.midi = midi;
+    attachRefKeyEvents(key, midi);
+    container.appendChild(key);
+  }
+}
+
+function attachRefKeyEvents(el, midi) {
+  const start = (e) => { e.preventDefault(); playRefNote(midi); };
+  const stop = (e) => { e.preventDefault(); stopRefNote(midi); };
+  el.addEventListener("mousedown", start);
+  el.addEventListener("touchstart", start, { passive: false });
+  el.addEventListener("mouseup", stop);
+  el.addEventListener("mouseleave", stop);
+  el.addEventListener("touchend", stop, { passive: false });
+  el.addEventListener("touchcancel", stop, { passive: false });
+}
+
+async function playRefNote(midi) {
+  if (Tone.context.state !== "running") await Tone.start();
+  const synth = getRefSynth();
+  synth.oscillator.type = document.getElementById("ref-waveform").value;
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  synth.triggerAttack(freq);
+  refActiveMidi = midi;
+  document.getElementById("ref-piano-now-playing").textContent = `Sonando: ${formatNoteLabel(midi)} (${freq.toFixed(1)} Hz)`;
+}
+
+function stopRefNote(midi) {
+  if (refActiveMidi !== midi) return;
+  if (refSynth) refSynth.triggerRelease();
+  refActiveMidi = null;
+  document.getElementById("ref-piano-now-playing").textContent = "Toca una tecla para empezar";
+}
+
+document.getElementById("ref-waveform")?.addEventListener("change", (e) => {
+  if (refSynth) refSynth.oscillator.type = e.target.value;
+});
+
+// --- TRANSPONER ACORDES ---
+const CHORD_KEYS_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const CHORD_KEYS_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+// Tonalidades que tradicionalmente se escriben con bemoles
+const FLAT_KEY_NAMES = new Set(["F", "Bb", "Eb", "Ab", "Db", "Gb", "Dm", "Gm", "Cm", "Fm", "Bbm", "Ebm"]);
+
+function noteNameToIndex(note) {
+  const idx = CHORD_KEYS_SHARP.indexOf(note);
+  if (idx >= 0) return idx;
+  return CHORD_KEYS_FLAT.indexOf(note);
+}
+
+function populateChordKeySelects() {
+  const fromSel = document.getElementById("chord-from-key");
+  const toSel = document.getElementById("chord-to-key");
+  const keys = ["C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"];
+  fromSel.innerHTML = keys.map((k, i) => `<option value="${i}">${k}</option>`).join("");
+  toSel.innerHTML = keys.map((k, i) => `<option value="${i}">${k}</option>`).join("");
+  fromSel.value = "0";
+  toSel.value = "0";
+}
+
+// Detecta tokens de acordes tipo: C, C#, Db, Am, F#m7, Bsus4, G/B, Cmaj7, D7, Em7b5...
+const CHORD_REGEX = /\b([A-G])(#|b)?((?:maj|min|sus|dim|aug|add|m)?\d{0,2}[a-zA-Z0-9#+\-]*)?(\/([A-G])(#|b)?)?/g;
+
+function transposeChordToken(root, accidental, suffix, bassRoot, bassAccidental, semitones, useFlat) {
+  const fullRoot = root + (accidental || "");
+  const rootIdx = noteNameToIndex(fullRoot);
+  if (rootIdx < 0) return null; // no es una nota válida (ej. una letra suelta de la letra de la canción)
+  const newIdx = ((rootIdx + semitones) % 12 + 12) % 12;
+  const newRoot = (useFlat ? CHORD_KEYS_FLAT : CHORD_KEYS_SHARP)[newIdx];
+
+  let result = newRoot + (suffix || "");
+  if (bassRoot) {
+    const bassFull = bassRoot + (bassAccidental || "");
+    const bassIdx = noteNameToIndex(bassFull);
+    if (bassIdx >= 0) {
+      const newBassIdx = ((bassIdx + semitones) % 12 + 12) % 12;
+      result += "/" + (useFlat ? CHORD_KEYS_FLAT : CHORD_KEYS_SHARP)[newBassIdx];
+    }
+  }
+  return result;
+}
+
+function isLikelyChordLine(line) {
+  // Una línea de acordes tiene mayoría de "palabras" cortas tipo acorde y poco texto normal
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const chordLike = tokens.filter(t => /^[A-G](#|b)?(maj|min|sus|dim|aug|add|m)?\d{0,2}[a-zA-Z0-9#+\-\/]*$/.test(t));
+  return chordLike.length / tokens.length >= 0.6;
+}
+
+function transposeLine(line, semitones, useFlat) {
+  return line.replace(CHORD_REGEX, (match, root, accidental, suffix, slashPart, bassRoot, bassAccidental) => {
+    const transposed = transposeChordToken(root, accidental, suffix, bassRoot, bassAccidental, semitones, useFlat);
+    return transposed === null ? match : transposed;
+  });
+}
+
+function transposeChordText() {
+  const text = document.getElementById("chord-input").value;
+  if (!text.trim()) {
+    showToast("Pega primero la letra con acordes", "error");
+    return;
+  }
+  const fromIdx = parseInt(document.getElementById("chord-from-key").value, 10);
+  const toIdx = parseInt(document.getElementById("chord-to-key").value, 10);
+  const semitones = toIdx - fromIdx;
+  const targetKeyName = CHORD_KEYS_SHARP[toIdx];
+  const targetKeyNameFlat = CHORD_KEYS_FLAT[toIdx];
+  const useFlat = FLAT_KEY_NAMES.has(targetKeyNameFlat) || FLAT_KEY_NAMES.has(targetKeyName);
+
+  const lines = text.split("\n");
+  const outLines = lines.map(line => {
+    if (!line.trim()) return line;
+    if (isLikelyChordLine(line)) {
+      return transposeLine(line, semitones, useFlat);
+    }
+    return line; // línea de letra normal, no se toca
+  });
+
+  document.getElementById("chord-output").textContent = outLines.join("\n");
+  document.getElementById("chord-output-box").classList.remove("hidden");
+  document.getElementById("chord-output-box").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  showToast(semitones === 0 ? "Misma tonalidad, sin cambios" : `Transpuesto ${semitones > 0 ? "+" : ""}${semitones} semitonos`);
+}
+
+function copyTransposedResult() {
+  const out = document.getElementById("chord-output").textContent;
+  if (!out) {
+    showToast("Primero presiona Transponer", "error");
+    return;
+  }
+  navigator.clipboard.writeText(out).then(() => showToast("Copiado al portapapeles")).catch(() => showToast("No se pudo copiar", "error"));
+}
+
+// --- CALENTAMIENTO VOCAL ---
+const WARMUP_EXERCISES = [
+  { name: "Respiración profunda", seconds: 30, desc: "Inhala 4 segundos por la nariz, exhala 6 segundos lento por la boca." },
+  { name: "Labios vibrantes (motorboat)", seconds: 45, desc: "Vibra los labios mientras subes y bajas en una escala suave." },
+  { name: "Lengua afuera (sirena)", seconds: 45, desc: "Saca la lengua relajada y haz un glissando de grave a agudo y viceversa." },
+  { name: "Humming (Mmm) en escalas", seconds: 60, desc: "Tararea con la boca cerrada subiendo por una escala de 5 notas." },
+  { name: "Staccato en \"Ha-Ha-Ha\"", seconds: 40, desc: "Notas cortas y separadas, activando el apoyo del diafragma." },
+  { name: "Vocales sostenidas (A-E-I-O-U)", seconds: 60, desc: "Sostén cada vocal con tu nota cómoda, relajando mandíbula." },
+  { name: "Escala completa final", seconds: 50, desc: "Canta una escala mayor completa subiendo y bajando, sin forzar." }
+];
+
+let warmupIndex = 0;
+let warmupRemaining = 0;
+let warmupTimerHandle = null;
+let warmupPaused = false;
+
+function renderWarmupList() {
+  const list = document.getElementById("warmup-list");
+  list.innerHTML = WARMUP_EXERCISES.map((ex, i) => `
+    <div class="bg-slate-950/50 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between gap-3" id="warmup-item-${i}">
+      <div>
+        <div class="text-sm font-bold text-slate-200">${i + 1}. ${ex.name}</div>
+        <div class="text-xs text-slate-300 mt-0.5">${ex.desc}</div>
+      </div>
+      <div class="text-xs font-bold text-slate-300 whitespace-nowrap">${ex.seconds}s</div>
+    </div>`).join("");
+}
+
+function formatTimer(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function startWarmupRoutine() {
+  warmupIndex = 0;
+  document.getElementById("warmup-start-btn").classList.add("hidden");
+  document.getElementById("warmup-active-box").classList.remove("hidden");
+  beginWarmupExercise(warmupIndex);
+}
+
+function beginWarmupExercise(i) {
+  document.querySelectorAll("#warmup-list > div").forEach(el => el.classList.remove("border-emerald-400/60"));
+  if (i >= WARMUP_EXERCISES.length) {
+    stopWarmupRoutine();
+    showToast("¡Calentamiento completo! 🎤");
+    return;
+  }
+  const ex = WARMUP_EXERCISES[i];
+  document.getElementById(`warmup-item-${i}`)?.classList.add("border-emerald-400/60");
+  document.getElementById("warmup-active-name").textContent = ex.name;
+  warmupRemaining = ex.seconds;
+  warmupPaused = false;
+  document.getElementById("warmup-pause-btn").textContent = "Pausar";
+  updateWarmupTimerDisplay();
+  clearInterval(warmupTimerHandle);
+  warmupTimerHandle = setInterval(() => {
+    if (warmupPaused) return;
+    warmupRemaining--;
+    updateWarmupTimerDisplay();
+    if (warmupRemaining <= 0) {
+      clearInterval(warmupTimerHandle);
+      warmupIndex++;
+      beginWarmupExercise(warmupIndex);
+    }
+  }, 1000);
+}
+
+function updateWarmupTimerDisplay() {
+  document.getElementById("warmup-active-timer").textContent = formatTimer(Math.max(warmupRemaining, 0));
+}
+
+function pauseWarmup() {
+  warmupPaused = !warmupPaused;
+  document.getElementById("warmup-pause-btn").textContent = warmupPaused ? "Reanudar" : "Pausar";
+}
+
+function skipWarmup() {
+  clearInterval(warmupTimerHandle);
+  warmupIndex++;
+  beginWarmupExercise(warmupIndex);
+}
+
+function stopWarmupRoutine() {
+  clearInterval(warmupTimerHandle);
+  document.getElementById("warmup-active-box").classList.add("hidden");
+  document.getElementById("warmup-start-btn").classList.remove("hidden");
+  document.querySelectorAll("#warmup-list > div").forEach(el => el.classList.remove("border-emerald-400/60"));
+}
+
+// --- MODO ENSAYO EN VIVO (afinador continuo) ---
+let liveRehearsalStream = null;
+let liveRehearsalSource = null;
+let liveRehearsalAnalyser = null;
+let liveRehearsalRAF = null;
+let liveRehearsalActive = false;
+let liveTargetMidi = null;
+
+function populateLiveTargetSelect() {
+  const sel = document.getElementById("live-target-note");
+  const options = ['<option value="">Solo mostrar lo que canto (sin objetivo fijo)</option>'];
+  for (let midi = 48; midi <= 79; midi++) { // C3 a G5 aprox
+    options.push(`<option value="${midi}">${formatNoteLabel(midi)}</option>`);
+  }
+  sel.innerHTML = options.join("");
+}
+
+document.getElementById("live-target-note")?.addEventListener("change", (e) => {
+  liveTargetMidi = e.target.value ? parseInt(e.target.value, 10) : null;
+});
+
+async function toggleLiveRehearsal() {
+  if (liveRehearsalActive) {
+    stopLiveRehearsal();
+    return;
+  }
+
+  try {
+    liveRehearsalStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    document.getElementById("mic-warning-banner").classList.remove("hidden");
+    showToast("No se pudo acceder al micrófono", "error");
+    return;
+  }
+
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  liveRehearsalSource = audioContext.createMediaStreamSource(liveRehearsalStream);
+  liveRehearsalAnalyser = audioContext.createAnalyser();
+  liveRehearsalAnalyser.fftSize = 2048;
+  liveRehearsalSource.connect(liveRehearsalAnalyser);
+
+  liveRehearsalActive = true;
+  document.getElementById("live-rehearsal-btn").textContent = "⏹ Detener afinador en vivo";
+  document.getElementById("live-rehearsal-btn").classList.remove("bg-sky-500", "hover:bg-sky-400");
+  document.getElementById("live-rehearsal-btn").classList.add("bg-rose-500", "hover:bg-rose-400");
+  document.getElementById("live-rehearsal-status").textContent = "Escuchando...";
+  document.getElementById("live-rehearsal-status").className = "text-xs font-semibold tracking-wider uppercase text-emerald-400 blink-dot";
+
+  runLiveRehearsalLoop();
+}
+
+function stopLiveRehearsal() {
+  liveRehearsalActive = false;
+  if (liveRehearsalRAF) cancelAnimationFrame(liveRehearsalRAF);
+  if (liveRehearsalStream) {
+    liveRehearsalStream.getTracks().forEach(t => t.stop());
+    liveRehearsalStream = null;
+  }
+  if (liveRehearsalSource) {
+    liveRehearsalSource.disconnect();
+    liveRehearsalSource = null;
+  }
+  document.getElementById("live-rehearsal-btn").textContent = "🎙️ Iniciar afinador en vivo";
+  document.getElementById("live-rehearsal-btn").classList.add("bg-sky-500", "hover:bg-sky-400");
+  document.getElementById("live-rehearsal-btn").classList.remove("bg-rose-500", "hover:bg-rose-400");
+  document.getElementById("live-rehearsal-status").textContent = "Apagado";
+  document.getElementById("live-rehearsal-status").className = "text-xs font-semibold tracking-wider uppercase text-slate-300";
+  document.getElementById("live-rehearsal-note").textContent = "--";
+  document.getElementById("live-rehearsal-freq").textContent = "-- Hz";
+  document.getElementById("live-rehearsal-cents").textContent = "0¢";
+  document.getElementById("live-rehearsal-needle").style.left = "50%";
+  document.getElementById("live-rehearsal-display").className = "rounded-2xl border-2 border-slate-800 transition-colors duration-200 p-6 text-center mb-4";
+}
+
+function runLiveRehearsalLoop() {
+  if (!liveRehearsalActive || !liveRehearsalAnalyser) return;
+
+  const buffer = new Float32Array(liveRehearsalAnalyser.fftSize);
+  liveRehearsalAnalyser.getFloatTimeDomainData(buffer);
+  const freq = autoCorrelate(buffer, audioContext.sampleRate);
+
+  if (freq !== -1) {
+    const midi = freqToMidi(freq);
+    updateLiveRehearsalDisplay(midi, freq);
+  } else {
+    document.getElementById("live-rehearsal-note").textContent = "--";
+    document.getElementById("live-rehearsal-freq").textContent = "-- Hz";
+  }
+
+  liveRehearsalRAF = requestAnimationFrame(runLiveRehearsalLoop);
+}
+
+function updateLiveRehearsalDisplay(midi, freq) {
+  const refMidi = liveTargetMidi !== null ? liveTargetMidi : Math.round(midi);
+  const note = midiToNoteName(refMidi);
+  document.getElementById("live-rehearsal-note").textContent = `${note.nameEs}${note.octave}`;
+  document.getElementById("live-rehearsal-freq").textContent = `${freq.toFixed(1)} Hz`;
+
+  const cents = (midi - refMidi) * 100;
+  const clampedCents = Math.max(Math.min(cents, 50), -50);
+  const pct = 50 + (clampedCents / 50) * 40;
+  const needle = document.getElementById("live-rehearsal-needle");
+  const display = document.getElementById("live-rehearsal-display");
+  needle.style.left = `${pct}%`;
+
+  const centsLabel = document.getElementById("live-rehearsal-cents");
+  if (Math.abs(cents) < 12) {
+    centsLabel.textContent = "Afinado ✓";
+    needle.className = "needle-indicator absolute top-0 bottom-0 w-2 rounded-full bg-emerald-400";
+    display.className = "rounded-2xl border-2 border-emerald-400/60 bg-emerald-400/5 transition-colors duration-200 p-6 text-center mb-4";
+  } else {
+    centsLabel.textContent = `${cents > 0 ? "+" : ""}${Math.round(cents)}¢ ${cents > 0 ? "(alto)" : "(bajo)"}`;
+    needle.className = "needle-indicator absolute top-0 bottom-0 w-2 rounded-full bg-amber-400";
+    display.className = "rounded-2xl border-2 border-amber-400/40 bg-amber-400/5 transition-colors duration-200 p-6 text-center mb-4";
+  }
+}
+
+// --- REPERTORIO DE CANCIONES (sincronizado en la nube con Firestore) ---
+const KEY_LABELS = ["C","C#/Db","D","D#/Eb","E","F","F#/Gb","G","G#/Ab","A","A#/Bb","B"];
+let repertoireCache = [];
+
+function populateSongKeySelects() {
+  const fromSel = document.getElementById("song-from-key");
+  const toSel = document.getElementById("song-to-key");
+  fromSel.innerHTML = KEY_LABELS.map((k, i) => `<option value="${i}">${k}</option>`).join("");
+  toSel.innerHTML = KEY_LABELS.map((k, i) => `<option value="${i}">${k}</option>`).join("");
+}
+
+function startRepertoireSync() {
+  if (!db) return;
+  db.collection("songs").onSnapshot(
+    (snapshot) => {
+      repertoireCache = snapshot.docs.map(d => d.data());
+      renderRepertoireList();
+    },
+    (err) => {
+      console.warn("Error de sincronización del repertorio:", err);
+      showToast("No se pudo conectar con la base de datos del repertorio", "error");
+    }
+  );
+}
+
+async function saveSongToRepertoire() {
+  const name = document.getElementById("song-name-input").value.trim();
+  if (!name) {
+    showToast("Ponle un nombre a la canción", "error");
+    return;
+  }
+  const fromKey = parseInt(document.getElementById("song-from-key").value, 10);
+  const toKey = parseInt(document.getElementById("song-to-key").value, 10);
+  const singer = document.getElementById("song-singer-input").value.trim();
+  const chords = document.getElementById("song-chords-input").value;
+  const entry = { name, fromKey, toKey, singer, chords, date: new Date().toISOString() };
+
+  if (!db) {
+    showToast("Sin conexión a la base de datos, no se pudo guardar", "error");
+    return;
+  }
+  try {
+    await db.collection("songs").doc(slugify(name)).set(entry);
+    showToast(`"${name}" guardada en el repertorio (sincronizada)`);
+  } catch (e) {
+    showToast("Error al guardar en la nube", "error");
+  }
+
+  document.getElementById("song-name-input").value = "";
+  document.getElementById("song-singer-input").value = "";
+  document.getElementById("song-chords-input").value = "";
+}
+
+async function deleteSongFromRepertoire(name) {
+  if (!db) return;
+  try {
+    await db.collection("songs").doc(slugify(name)).delete();
+  } catch (e) {
+    showToast("No se pudo eliminar", "error");
+  }
+}
+
+function loadSongIntoTransposer(name) {
+  const song = repertoireCache.find(s => s.name === name);
+  if (!song) return;
+  document.getElementById("chord-from-key").value = song.fromKey;
+  document.getElementById("chord-to-key").value = song.toKey;
+  document.getElementById("chord-input").value = song.chords || "";
+  document.getElementById("chord-output-box").classList.add("hidden");
+  document.getElementById("repertoire-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast(`"${song.name}" cargada en el transponer`, "info");
+  setTimeout(() => {
+    document.getElementById("chord-input").scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 400);
+}
+
+let expandedSongName = null;
+
+function getTransposedChordsForSong(song) {
+  const semitones = song.toKey - song.fromKey;
+  const targetKeyName = CHORD_KEYS_SHARP[song.toKey];
+  const targetKeyNameFlat = CHORD_KEYS_FLAT[song.toKey];
+  const useFlat = FLAT_KEY_NAMES.has(targetKeyNameFlat) || FLAT_KEY_NAMES.has(targetKeyName);
+  const lines = (song.chords || "").split("\n");
+  return lines.map(line => {
+    if (!line.trim()) return line;
+    if (isLikelyChordLine(line)) return transposeLine(line, semitones, useFlat);
+    return line;
+  }).join("\n");
+}
+
+function togglePracticeSong(name) {
+  expandedSongName = expandedSongName === name ? null : name;
+  renderRepertoireList();
+}
+
+function renderRepertoireList() {
+  const query = (document.getElementById("repertoire-search-input")?.value || "").trim().toLowerCase();
+  const songs = !query ? repertoireCache : repertoireCache.filter(s =>
+    s.name.toLowerCase().includes(query) ||
+    (s.singer || "").toLowerCase().includes(query) ||
+    (s.chords || "").toLowerCase().includes(query)
+  );
+  const list = document.getElementById("repertoire-list");
+  const emptyMsg = document.getElementById("repertoire-empty-msg");
+
+  if (songs.length === 0) {
+    list.innerHTML = "";
+    emptyMsg.textContent = query ? `Sin resultados para "${query}"` : "Todavía no has guardado canciones.";
+    emptyMsg.classList.remove("hidden");
+    return;
+  }
+  emptyMsg.classList.add("hidden");
+
+  list.innerHTML = songs.map(s => {
+    const isOpen = expandedSongName === s.name;
+    const safeName = escapeHtml(s.name).replace(/'/g, "\\'");
+    const transposedChords = s.chords ? getTransposedChordsForSong(s) : "";
+    return `
+    <div class="bg-slate-950/50 border ${isOpen ? "border-violet-400/50" : "border-slate-800/80"} rounded-xl p-3 transition-colors">
+      <div class="flex items-center justify-between gap-3 flex-wrap cursor-pointer" onclick="togglePracticeSong('${safeName}')">
+        <div class="min-w-0">
+          <div class="text-sm font-bold text-slate-200">🎵 ${escapeHtml(s.name)}</div>
+          <div class="text-xs text-slate-300 mt-0.5">
+            ${KEY_LABELS[s.fromKey]} → <span class="text-violet-300 font-bold">${KEY_LABELS[s.toKey]}</span>
+            ${s.singer ? ` · para ${escapeHtml(s.singer)}` : ""}
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button onclick="event.stopPropagation(); togglePracticeSong('${safeName}')" class="bg-violet-500/20 border border-violet-400/40 hover:bg-violet-500/30 text-violet-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer">${isOpen ? "Ocultar ▲" : "▶ Practicar"}</button>
+          <button onclick="event.stopPropagation(); deleteSongFromRepertoire('${safeName}')" class="text-slate-500 hover:text-rose-400 text-xs transition-all cursor-pointer" title="Eliminar">✕</button>
+        </div>
+      </div>
+      ${isOpen ? `
+      <div class="mt-3 pt-3 border-t border-slate-800">
+        ${s.chords ? `
+          <div class="text-[10px] uppercase font-extrabold text-violet-300 tracking-wider mb-1.5">Acordes ya en tonalidad ${KEY_LABELS[s.toKey]}, listos para cantar:</div>
+          <pre class="w-full bg-slate-950/70 border border-violet-500/20 rounded-xl px-4 py-3 text-sm text-slate-100 font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto mb-3">${escapeHtml(transposedChords)}</pre>
+        ` : `<p class="text-sm text-slate-300 mb-3">Esta canción no tiene acordes guardados todavía.</p>`}
+        <button onclick="event.stopPropagation(); loadSongIntoTransposer('${safeName}')" class="bg-slate-900 border border-slate-800 hover:bg-slate-850 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer">Abrir en Transponer (para editar tonalidad)</button>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// --- INICIALIZACIÓN ---
+document.addEventListener("DOMContentLoaded", () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById("mic-warning-banner").classList.remove("hidden");
+    document.getElementById("mic-warning-banner").querySelector("p").textContent =
+      "Tu navegador no soporta acceso al micrófono. Prueba con Chrome, Edge o Safari recientes.";
+    document.getElementById("mic-button").disabled = true;
+  }
+  renderRefPiano();
+  populateChordKeySelects();
+  renderWarmupList();
+  populateLiveTargetSelect();
+  populateSongKeySelects();
+  startTeamSync();
+  startRepertoireSync();
+  if (!db) {
+    showToast("No se pudo conectar con la base de datos en la nube", "error");
+  }
+});
+</script>
+
+</body>
+</html>
